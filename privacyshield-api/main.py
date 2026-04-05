@@ -56,9 +56,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        "https://app.privacyshield.io",
-        "https://privacyshield.io",
-        "https://shame.privacyshield.io"
+        "https://aletheos.tech",
+        "https://www.aletheos.tech"
     ],
     allow_credentials=True,
     allow_methods=["*"],

@@ -401,7 +401,7 @@ Sincerely,
 
 ---
 This removal request was submitted on behalf of the data subject via PrivacyShield (velouria.tech).
-Request timestamp: {datetime.utcnow().strftime("%Y-%m-%d %Human:%M:%S UTC")}
+Request timestamp: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
 """
 
     return {"subject": subject, "body": body}

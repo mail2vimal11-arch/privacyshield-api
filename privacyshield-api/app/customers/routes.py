@@ -11,7 +11,7 @@ Endpoints:
   GET  /v1/customers/usage         — Usage history
 """
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 

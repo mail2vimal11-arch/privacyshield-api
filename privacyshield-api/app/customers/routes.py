@@ -87,7 +87,7 @@ async def signup(request: SignupRequest):
             "plan_status": "active",
             "monthly_scan_quota": quota["monthly_scan_quota"],
             "monthly_scans_used": 0
-        }).execute()
+        }).select().execute()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create account: {str(e)}")
 
@@ -105,7 +105,7 @@ async def signup(request: SignupRequest):
             "key_prefix": key_prefix,
             "name": "Default Key",
             "is_active": True
-        }).execute()
+        }).select().execute()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate API key: {str(e)}")
 

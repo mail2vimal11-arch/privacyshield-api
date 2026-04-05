@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 
 from app.core.database import init_db
 from app.ai_models.routes import router as ai_models_router
+from app.customers.routes import router as customers_router
 
 
 # ----------------------------------------------------------------
@@ -67,6 +68,9 @@ app.add_middleware(
 
 # AI Model Data Removal (Product 4 — flagship)
 app.include_router(ai_models_router, prefix="/v1")
+
+# Customer management (signup, API keys, usage)
+app.include_router(customers_router, prefix="/v1")
 
 # TODO: Add these in coming days:
 # from app.shadow_it.routes import router as shadow_it_router

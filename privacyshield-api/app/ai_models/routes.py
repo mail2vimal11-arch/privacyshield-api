@@ -9,11 +9,14 @@ from datetime import datetime
 
 from app.core.auth import verify_api_key, check_quota, increment_usage
 from app.core.database import supabase
+from app.core.email import email_sender
 from app.ai_models.scanner import AIModelScanner
+from app.ai_models.gdpr_generator import GDPRLetterGenerator, generate_pdf
 from app.utils.helpers import generate_id, generate_tracking_number, calculate_next_scan
 
 router = APIRouter(prefix="/ai-models", tags=["AI Model Data Removal"])
 scanner = AIModelScanner()
+gdpr_gen = GDPRLetterGenerator()
 
 
 # ----------------------------------------------------------------
@@ -383,6 +386,96 @@ async def get_shame_board():
         "description": "Community-tracked data on how quickly AI companies respond to GDPR deletion requests",
         "updated_at": datetime.utcnow().isoformat() + "Z",
         "vendors": result.data
+    }
+
+
+@router.post("/generate-gdpr-request")
+async def generate_gdpr_request(
+    request: dict,
+    customer: dict = Depends(verify_api_key)
+):
+    """
+    Generate a GDPR Article 17 deletion request letter for a specific vendor.
+    Optionally auto-submits it via email.
+
+    Body:
+    {
+      "vendor": "openai",
+      "profile": { "name": "Jane Doe", "email": "jane@example.com", "eu_resident": true },
+      "scan_id": "aiscan_abc123",
+      "auto_send": false
+    }
+    """
+    vendor = request.get("vendor", "").lower()
+    profile = request.get("profile", {})
+    scan_id = request.get("scan_id")
+    auto_send = request.get("auto_send", False)
+
+    if not vendor:
+        raise HTTPException(status_code=400, detail="'vendor' is required (e.g. 'openai', 'google', 'anthropic')")
+    if not profile.get("name") or not profile.get("email"):
+        raise HTTPException(status_code=400, detail="'profile.name' and 'profile.email' are required")
+
+    # Fetch scan evidence if scan_id provided
+    evidence = []
+    if scan_id:
+        scan_result = supabase.table("ai_model_scans").select(
+            "scan_results"
+        ).eq("scan_id", scan_id).eq("customer_id", customer["id"]).execute()
+
+        if scan_result.data:
+            scan_data = scan_result.data[0].get("scan_results", {})
+            for model in scan_data.get("models", []):
+                if vendor in model.get("model_id", "").lower() or vendor in model.get("vendor", "").lower():
+                    evidence = model.get("evidence", [])[:5]
+                    break
+
+    # Generate the letter
+    letter = gdpr_gen.generate(
+        vendor=vendor,
+        requester=profile,
+        evidence=evidence,
+        scan_id=scan_id
+    )
+
+    # Generate PDF
+    pdf_bytes = generate_pdf(letter)
+
+    send_result = None
+    if auto_send:
+        send_result = await email_sender.send_gdpr_letter(
+            letter=letter,
+            requester_email=profile["email"],
+            pdf_bytes=pdf_bytes
+        )
+
+        # Log the letter to database
+        try:
+            supabase.table("gdpr_request_letters").insert({
+                "vendor": vendor,
+                "subject_line": letter["subject"],
+                "body": letter["body"],
+                "recipient_email": letter["recipient_email"],
+                "cc_emails": letter["cc_emails"],
+                "legal_basis": letter["legal_basis"],
+                "send_method": "email",
+                "sent_at": datetime.utcnow().isoformat() if send_result and send_result.get("sent") else None,
+                "email_send_result": send_result or {}
+            }).execute()
+        except Exception as e:
+            print(f"[WARNING] Failed to save GDPR letter record: {e}")
+
+    return {
+        "vendor": vendor,
+        "letter": letter,
+        "pdf_available": bool(pdf_bytes),
+        "auto_sent": auto_send,
+        "send_result": send_result,
+        "next_steps": (
+            "Letter sent. Track vendor response at /v1/ai-models/shame-board"
+            if auto_send and send_result and send_result.get("sent")
+            else "Set 'auto_send': true to submit automatically, or copy the 'body' and send it yourself to the 'recipient_email'."
+        )
     }
 
 

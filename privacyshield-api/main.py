@@ -93,6 +93,21 @@ async def health_check():
     return {"status": "ok", "service": "PrivacyShield API", "version": "1.0.0"}
 
 
+@app.get("/debug/db")
+async def debug_db():
+    """Temporary debug endpoint — tests Supabase connection and table access."""
+    from app.core.database import supabase
+    results = {}
+    tables = ["customers", "api_keys", "public_shame_board"]
+    for table in tables:
+        try:
+            r = supabase.table(table).select("id").limit(1).execute()
+            results[table] = f"OK ({len(r.data)} rows returned)"
+        except Exception as e:
+            results[table] = f"ERROR: {str(e)}"
+    return {"db_status": results}
+
+
 @app.get("/shame")
 async def shame_dashboard():
     """
@@ -119,6 +134,5 @@ async def root():
             "Customers — /v1/customers/",
             "Data Deletion — /v1/deletion/",
             "Web Data Removal — /v1/web-removal/",
-            "Web Data Removal — coming soon"
         ]
     }

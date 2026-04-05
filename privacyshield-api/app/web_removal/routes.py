@@ -19,7 +19,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 
 from app.core.auth import verify_api_key, check_quota, increment_usage
 from app.core.database import supabase
@@ -43,14 +43,14 @@ os.makedirs(PDF_DIR, exist_ok=True)
 
 class ScanRequest(BaseModel):
     full_name: str
-    email: EmailStr
+    email: str
     addresses: Optional[list[str]] = None
     phone_numbers: Optional[list[str]] = None
 
 
 class RemovalRequest(BaseModel):
     full_name: str
-    email: EmailStr
+    email: str
     addresses: Optional[list[str]] = None
     phone_numbers: Optional[list[str]] = None
     broker_keys: Optional[list[str]] = None  # None = all brokers

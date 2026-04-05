@@ -12,9 +12,9 @@ After creating products in your Stripe dashboard, paste the Price IDs here.
 # ----------------------------------------------------------------
 
 STRIPE_PRICE_IDS = {
-    "personal":     "price_REPLACE_WITH_PERSONAL_PRICE_ID",      # $29/month
-    "professional": "price_REPLACE_WITH_PROFESSIONAL_PRICE_ID",  # $99/month
-    "business":     "price_REPLACE_WITH_BUSINESS_PRICE_ID",      # $999/month
+    "personal":     "price_1TIjBKPK9MwlrJaJSOexfeCz",      # $29/month
+    "professional": "price_1TIjBFPK9MwlrJaJYMwiy7IY",  # $99/month
+    "business":     "price_1TIjBGPK9MwlrJaJZLM1F6g2",      # $999/month
 }
 
 PLAN_MONTHLY_QUOTAS = {

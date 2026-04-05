@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr
 
 from app.core.auth import verify_api_key, check_quota, increment_usage
-from app.core.database import get_db
+from app.core.database import supabase
 from app.web_removal.brokers import (
     BROKER_REGISTRY,
     WebRemovalEngine,
@@ -70,7 +70,7 @@ async def scan_exposure(
     likely have data on this person. Returns a risk score
     and list of brokers to target for removal.
     """
-    db = get_db()
+    db = supabase
 
     # Quota check
     await check_quota(customer, "web_removal_scan", db)
@@ -123,7 +123,7 @@ async def submit_removal(
 
     Returns a job_id you can use to download the PDF package.
     """
-    db = get_db()
+    db = supabase
     await check_quota(customer, "web_removal_request", db)
 
     request_id = str(uuid.uuid4())
@@ -226,7 +226,7 @@ async def list_requests(
     customer=Depends(verify_api_key),
 ):
     """List all removal jobs submitted by this account."""
-    db = get_db()
+    db = supabase
     try:
         result = (
             db.table("web_removal_jobs")
@@ -252,7 +252,7 @@ async def get_request(
     customer=Depends(verify_api_key),
 ):
     """Get status and details of a specific removal job."""
-    db = get_db()
+    db = supabase
     try:
         result = (
             db.table("web_removal_jobs")
@@ -284,7 +284,7 @@ async def download_package(
     Download the PDF removal package for a specific request.
     This PDF documents all opt-out requests submitted on behalf of the data subject.
     """
-    db = get_db()
+    db = supabase
 
     # Verify ownership
     try:

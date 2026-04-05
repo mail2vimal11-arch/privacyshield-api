@@ -400,7 +400,7 @@ Sincerely,
 {email}
 
 ---
-This removal request was submitted on behalf of the data subject via PrivacyShield (velouria.tech).
+This removal request was submitted on behalf of the data subject via PrivacyShield (aletheos.tech).
 Request timestamp: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
 """
 
@@ -528,7 +528,7 @@ def generate_removal_package_pdf(
         ))
         story.append(Paragraph(
             "This document serves as evidence that opt-out requests were submitted on behalf of the "
-            "data subject. PrivacyShield (velouria.tech) is not responsible for broker compliance. "
+            "data subject. PrivacyShield (aletheos.tech) is not responsible for broker compliance. "
             "If brokers fail to remove data, the data subject may file a complaint with the relevant "
             "data protection authority (e.g., ICO in the UK, CNIL in France, FTC in the US).",
             legal_style,
@@ -617,7 +617,7 @@ class WebRemovalEngine:
         phone_numbers: list[str] | None = None,
         broker_keys: list[str] | None = None,
         sendgrid_client=None,
-        from_email: str = "privacy@velouria.tech",
+        from_email: str = "privacy@aletheos.tech",
     ) -> dict:
         """
         Submit removal requests to all (or selected) brokers.

@@ -14,6 +14,8 @@ from app.ai_models.routes import router as ai_models_router
 from app.customers.routes import router as customers_router
 from app.billing.routes import router as billing_router
 from app.shadow_it.routes import router as shadow_it_router
+from app.data_deletion.routes import router as deletion_router
+from app.web_removal.routes import router as web_removal_router
 
 
 # ----------------------------------------------------------------
@@ -77,14 +79,8 @@ app.include_router(ai_models_router, prefix="/v1")
 app.include_router(customers_router, prefix="/v1")
 app.include_router(billing_router, prefix="/v1")
 app.include_router(shadow_it_router, prefix="/v1")
-
-# TODO — coming in Day 6+:
-# from app.shadow_it.routes import router as shadow_it_router
-# from app.data_deletion.routes import router as deletion_router
-# from app.web_removal.routes import router as web_removal_router
-# app.include_router(shadow_it_router, prefix="/v1")
-# app.include_router(deletion_router, prefix="/v1")
-# app.include_router(web_removal_router, prefix="/v1")
+app.include_router(deletion_router, prefix="/v1")
+app.include_router(web_removal_router, prefix="/v1")
 
 
 # ----------------------------------------------------------------
@@ -121,7 +117,8 @@ async def root():
             "Shadow IT Detection — /v1/shadow-it/",
             "Billing — /v1/billing/",
             "Customers — /v1/customers/",
-            "Data Deletion — coming soon",
+            "Data Deletion — /v1/deletion/",
+            "Web Data Removal — /v1/web-removal/",
             "Web Data Removal — coming soon"
         ]
     }

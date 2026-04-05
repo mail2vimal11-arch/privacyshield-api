@@ -4,11 +4,16 @@ Entry point. Run with: uvicorn main:app --reload
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
+import os
 
 from app.core.database import init_db
 from app.ai_models.routes import router as ai_models_router
 from app.customers.routes import router as customers_router
+from app.billing.routes import router as billing_router
+from app.shadow_it.routes import router as shadow_it_router
 
 
 # ----------------------------------------------------------------
@@ -17,7 +22,6 @@ from app.customers.routes import router as customers_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # On startup: connect to database
     print("🚀 PrivacyShield API starting up...")
     try:
         init_db()
@@ -25,10 +29,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"⚠️  Database connection failed: {e}")
         print("   Make sure SUPABASE_URL and SUPABASE_SERVICE_KEY are set in .env")
-
     yield
-
-    # On shutdown
     print("👋 PrivacyShield API shutting down")
 
 
@@ -43,8 +44,8 @@ app = FastAPI(
         "Scan AI models for your personal data, submit deletion requests, and track vendor responses."
     ),
     version="1.0.0",
-    docs_url="/docs",          # Swagger UI at /docs
-    redoc_url="/redoc",        # ReDoc at /redoc
+    docs_url="/docs",
+    redoc_url="/redoc",
     lifespan=lifespan
 )
 
@@ -54,25 +55,30 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "https://app.privacyshield.io",
-        "https://privacyshield.io"
+        "https://privacyshield.io",
+        "https://shame.privacyshield.io"
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Serve the static folder (shame dashboard HTML + any future assets)
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.exists(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
 
 # ----------------------------------------------------------------
 # Routers
 # ----------------------------------------------------------------
 
-# AI Model Data Removal (Product 4 — flagship)
 app.include_router(ai_models_router, prefix="/v1")
-
-# Customer management (signup, API keys, usage)
 app.include_router(customers_router, prefix="/v1")
+app.include_router(billing_router, prefix="/v1")
+app.include_router(shadow_it_router, prefix="/v1")
 
-# TODO: Add these in coming days:
+# TODO — coming in Day 6+:
 # from app.shadow_it.routes import router as shadow_it_router
 # from app.data_deletion.routes import router as deletion_router
 # from app.web_removal.routes import router as web_removal_router
@@ -87,8 +93,20 @@ app.include_router(customers_router, prefix="/v1")
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint — used by Railway to verify the app is running."""
+    """Health check — used by Railway."""
     return {"status": "ok", "service": "PrivacyShield API", "version": "1.0.0"}
+
+
+@app.get("/shame")
+async def shame_dashboard():
+    """
+    Serve the public Shame Dashboard HTML page.
+    Accessible at: https://your-api.railway.app/shame
+    """
+    shame_path = os.path.join(static_dir, "shame-dashboard.html")
+    if os.path.exists(shame_path):
+        return FileResponse(shame_path, media_type="text/html")
+    return {"error": "Shame dashboard not found"}
 
 
 @app.get("/")
@@ -97,9 +115,12 @@ async def root():
         "name": "PrivacyShield API",
         "version": "1.0.0",
         "docs": "/docs",
+        "shame_board": "/shame",
         "products": [
             "AI Model Data Removal — /v1/ai-models/",
-            "Shadow IT Detection — coming soon",
+            "Shadow IT Detection — /v1/shadow-it/",
+            "Billing — /v1/billing/",
+            "Customers — /v1/customers/",
             "Data Deletion — coming soon",
             "Web Data Removal — coming soon"
         ]

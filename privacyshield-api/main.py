@@ -1,12 +1,16 @@
 """
-main.py — PrivacyShield API
+main.py — Aletheos API
 Entry point. Run with: uvicorn main:app --reload
 """
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 import os
 
 from app.core.database import init_db
@@ -19,12 +23,19 @@ from app.web_removal.routes import router as web_removal_router
 
 
 # ----------------------------------------------------------------
+# Rate Limiter
+# ----------------------------------------------------------------
+
+limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
+
+
+# ----------------------------------------------------------------
 # Startup / Shutdown
 # ----------------------------------------------------------------
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("🚀 PrivacyShield API starting up...")
+    print("🚀 Aletheos API starting up...")
     try:
         init_db()
         print("✅ Database connected")
@@ -32,7 +43,7 @@ async def lifespan(app: FastAPI):
         print(f"⚠️  Database connection failed: {e}")
         print("   Make sure SUPABASE_URL and SUPABASE_SERVICE_KEY are set in .env")
     yield
-    print("👋 PrivacyShield API shutting down")
+    print("👋 Aletheos API shutting down")
 
 
 # ----------------------------------------------------------------
@@ -40,10 +51,11 @@ async def lifespan(app: FastAPI):
 # ----------------------------------------------------------------
 
 app = FastAPI(
-    title="PrivacyShield API",
+    title="Aletheos API",
     description=(
-        "The only platform that helps you exercise your GDPR rights against AI companies. "
-        "Scan AI models for your personal data, submit deletion requests, and track vendor responses."
+        "Privacy intelligence platform. Scan AI models for your personal data, "
+        "remove records from data brokers, detect shadow SaaS, and execute "
+        "GDPR-compliant data deletions — all under one API."
     ),
     version="1.0.0",
     docs_url="/docs",
@@ -51,7 +63,12 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS — allow requests from your frontend
+# Rate limiting middleware
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
+# CORS — locked to aletheos.tech only
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -64,7 +81,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve the static folder (shame dashboard HTML + any future assets)
+# Serve the static folder (shame dashboard + assets)
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.exists(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
@@ -74,11 +91,11 @@ if os.path.exists(static_dir):
 # Routers
 # ----------------------------------------------------------------
 
-app.include_router(ai_models_router, prefix="/v1")
-app.include_router(customers_router, prefix="/v1")
-app.include_router(billing_router, prefix="/v1")
-app.include_router(shadow_it_router, prefix="/v1")
-app.include_router(deletion_router, prefix="/v1")
+app.include_router(ai_models_router,  prefix="/v1")
+app.include_router(customers_router,  prefix="/v1")
+app.include_router(billing_router,    prefix="/v1")
+app.include_router(shadow_it_router,  prefix="/v1")
+app.include_router(deletion_router,   prefix="/v1")
 app.include_router(web_removal_router, prefix="/v1")
 
 
@@ -87,32 +104,15 @@ app.include_router(web_removal_router, prefix="/v1")
 # ----------------------------------------------------------------
 
 @app.get("/health")
-async def health_check():
+@limiter.limit("60/minute")
+async def health_check(request: Request):
     """Health check — used by Railway."""
-    return {"status": "ok", "service": "PrivacyShield API", "version": "1.0.0"}
-
-
-@app.get("/debug/db")
-async def debug_db():
-    """Temporary debug endpoint — tests Supabase connection and table access."""
-    from app.core.database import supabase
-    results = {}
-    tables = ["customers", "api_keys", "public_shame_board"]
-    for table in tables:
-        try:
-            r = supabase.table(table).select("id").limit(1).execute()
-            results[table] = f"OK ({len(r.data)} rows returned)"
-        except Exception as e:
-            results[table] = f"ERROR: {str(e)}"
-    return {"db_status": results}
+    return {"status": "ok", "service": "Aletheos API", "version": "1.0.0"}
 
 
 @app.get("/shame")
 async def shame_dashboard():
-    """
-    Serve the public Shame Dashboard HTML page.
-    Accessible at: https://your-api.railway.app/shame
-    """
+    """Public Shame Dashboard — AI vendor GDPR response tracker."""
     shame_path = os.path.join(static_dir, "shame-dashboard.html")
     if os.path.exists(shame_path):
         return FileResponse(shame_path, media_type="text/html")
@@ -120,18 +120,19 @@ async def shame_dashboard():
 
 
 @app.get("/")
-async def root():
+@limiter.limit("60/minute")
+async def root(request: Request):
     return {
-        "name": "PrivacyShield API",
+        "name": "Aletheos API",
         "version": "1.0.0",
         "docs": "/docs",
         "shame_board": "/shame",
         "products": [
-            "AI Model Data Removal — /v1/ai-models/",
-            "Shadow IT Detection — /v1/shadow-it/",
-            "Billing — /v1/billing/",
-            "Customers — /v1/customers/",
-            "Data Deletion — /v1/deletion/",
-            "Web Data Removal — /v1/web-removal/",
+            "AI Model Data Removal  — /v1/ai-models/",
+            "Shadow IT Detection    — /v1/shadow-it/",
+            "Data Deletion          — /v1/deletion/",
+            "Web Data Removal       — /v1/web-removal/",
+            "Customers              — /v1/customers/",
+            "Billing                — /v1/billing/",
         ]
     }

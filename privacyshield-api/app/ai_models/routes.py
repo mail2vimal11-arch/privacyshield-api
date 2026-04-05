@@ -378,14 +378,18 @@ async def list_supported_models(customer: dict = Depends(verify_api_key)):
 @router.get("/shame-board")
 async def get_shame_board():
     """Public endpoint — no API key required. Shows vendor response times."""
-    result = supabase.table("public_shame_board").select("*").order(
-        "community_rating", desc=True
-    ).execute()
+    try:
+        result = supabase.table("public_shame_board").select("*").order(
+            "community_rating", desc=True
+        ).execute()
+        vendors = result.data or []
+    except Exception as e:
+        vendors = []
     return {
         "title": "AI Vendor Deletion Request Response Times",
         "description": "Community-tracked data on how quickly AI companies respond to GDPR deletion requests",
         "updated_at": datetime.utcnow().isoformat() + "Z",
-        "vendors": result.data
+        "vendors": vendors
     }
 
 

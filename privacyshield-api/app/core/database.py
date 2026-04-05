@@ -24,11 +24,20 @@ def get_supabase() -> Client:
     return client
 
 
-# Single shared instance used across the app
-supabase: Client = None
+# Initialize immediately so route files that do
+# `from app.core.database import supabase` get the real client,
+# not None. Previously supabase was set to None here and only
+# initialized later in the lifespan, which was too late.
+try:
+    supabase: Client = get_supabase()
+except Exception as e:
+    print(f"⚠️  Supabase init failed at import time: {e}")
+    supabase: Client = None
+
 
 def init_db():
-    """Call once at startup to initialize the shared DB client."""
+    """Call once at startup to confirm DB client is ready."""
     global supabase
-    supabase = get_supabase()
+    if supabase is None:
+        supabase = get_supabase()
     return supabase

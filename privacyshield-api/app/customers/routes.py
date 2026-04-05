@@ -62,9 +62,12 @@ async def signup(request: SignupRequest):
     Returns the API key — shown once, not stored in plaintext.
     """
     # Check if email already exists
-    existing = supabase.table("customers").select("id").eq(
-        "email", request.email
-    ).execute()
+    try:
+        existing = supabase.table("customers").select("id").eq(
+            "email", request.email
+        ).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database connection error: {str(e)}")
 
     if existing.data:
         raise HTTPException(

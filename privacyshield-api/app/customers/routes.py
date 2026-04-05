@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
+import uuid
 
 from app.core.auth import verify_api_key, generate_api_key, hash_api_key
 from app.core.database import supabase
@@ -77,22 +78,25 @@ async def signup(request: SignupRequest):
 
     quota = PLAN_QUOTAS.get(request.plan, PLAN_QUOTAS["personal"])
 
+    # Generate customer ID upfront so we don't need to read it back from the insert
+    customer_id = str(uuid.uuid4())
+    created_at = datetime.utcnow().isoformat()
+
     # Create customer
     try:
-        customer_result = supabase.table("customers").insert({
+        supabase.table("customers").insert({
+            "id": customer_id,
             "email": request.email,
             "full_name": request.full_name,
             "company_name": request.company_name,
             "plan": request.plan,
             "plan_status": "active",
             "monthly_scan_quota": quota["monthly_scan_quota"],
-            "monthly_scans_used": 0
-        }).select().execute()
+            "monthly_scans_used": 0,
+            "created_at": created_at
+        }).execute()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create account: {str(e)}")
-
-    customer = customer_result.data[0]
-    customer_id = customer["id"]
 
     # Generate API key
     raw_key, key_prefix = generate_api_key()
@@ -105,7 +109,7 @@ async def signup(request: SignupRequest):
             "key_prefix": key_prefix,
             "name": "Default Key",
             "is_active": True
-        }).select().execute()
+        }).execute()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate API key: {str(e)}")
 
@@ -129,7 +133,7 @@ async def signup(request: SignupRequest):
         "api_key_prefix": key_prefix,
         "warning": "Save your API key — it won't be shown again",
         "docs_url": "/docs",
-        "created_at": customer["created_at"]
+        "created_at": created_at
     }
 
 

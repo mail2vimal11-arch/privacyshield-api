@@ -13,13 +13,19 @@ Endpoints:
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
+import hmac
+import hashlib
+import time
 
 from app.core.auth import verify_api_key, generate_api_key, hash_api_key
 from app.core.database import supabase
 from app.core.email import email_sender
+from app.core.config import get_settings
 from app.utils.helpers import generate_id
+
+_settings = get_settings()
 
 router = APIRouter(prefix="/customers", tags=["Customers"])
 
@@ -232,6 +238,127 @@ async def revoke_api_key(
         "message": "API key revoked",
         "key_prefix": key_result.data[0]["key_prefix"],
         "revoked_at": datetime.utcnow().isoformat() + "Z"
+    }
+
+
+class MagicLinkRequest(BaseModel):
+    email: str
+
+
+class VerifyMagicLinkRequest(BaseModel):
+    customer_id: str
+    exp: int        # Unix timestamp
+    sig: str        # HMAC signature
+
+
+def _sign_token(customer_id: str, exp: int) -> str:
+    """Generate an HMAC signature for a magic link token."""
+    message = f"{customer_id}:{exp}".encode()
+    secret = _settings.api_key_secret.encode()
+    return hmac.new(secret, message, hashlib.sha256).hexdigest()[:40]
+
+
+@router.post("/magic-link")
+async def send_magic_link(request: MagicLinkRequest):
+    """
+    Send a magic login link to the user's email.
+    The link auto-logs them into the dashboard without needing an API key.
+    """
+    # Look up customer by email (don't reveal whether it exists)
+    try:
+        result = supabase.table("customers").select(
+            "id, email, full_name"
+        ).eq("email", request.email.lower().strip()).execute()
+    except Exception:
+        return {"message": "If an account exists for that email, a login link has been sent."}
+
+    if not result.data:
+        # Don't leak whether email is registered
+        return {"message": "If an account exists for that email, a login link has been sent."}
+
+    customer = result.data[0]
+    customer_id = customer["id"]
+    name = customer.get("full_name", "")
+
+    # Token expires in 15 minutes
+    exp = int(time.time()) + (15 * 60)
+    sig = _sign_token(customer_id, exp)
+
+    app_url = _settings.app_url
+    magic_url = f"{app_url}/dashboard.html?cid={customer_id}&exp={exp}&sig={sig}"
+
+    email_body = f"""Hi{(' ' + name) if name else ''},
+
+You requested a login link for your Aletheos account.
+
+Click the link below to access your dashboard — it expires in 15 minutes:
+
+{magic_url}
+
+If you did not request this, you can safely ignore this email.
+
+— The Aletheos Team
+https://aletheos.tech
+"""
+
+    try:
+        await email_sender.send(
+            to=customer["email"],
+            subject="Your Aletheos Login Link",
+            body=email_body,
+        )
+    except Exception as e:
+        print(f"[magic-link] Email failed: {e}")
+
+    return {"message": "If an account exists for that email, a login link has been sent."}
+
+
+@router.post("/verify-magic-link")
+async def verify_magic_link(request: VerifyMagicLinkRequest):
+    """
+    Validate a magic link token and issue a fresh API key.
+    Called by the dashboard after user clicks a magic link.
+    """
+    # Check expiry
+    if int(time.time()) > request.exp:
+        raise HTTPException(status_code=401, detail="Login link has expired. Please request a new one.")
+
+    # Verify signature
+    expected_sig = _sign_token(request.customer_id, request.exp)
+    if not hmac.compare_digest(expected_sig, request.sig):
+        raise HTTPException(status_code=401, detail="Invalid login link.")
+
+    # Look up customer
+    result = supabase.table("customers").select("*").eq(
+        "id", request.customer_id
+    ).execute()
+
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Account not found.")
+
+    customer = result.data[0]
+
+    # Revoke all existing keys and issue a fresh one
+    supabase.table("api_keys").update({"is_active": False}).eq(
+        "customer_id", customer["id"]
+    ).execute()
+
+    raw_key, key_prefix = generate_api_key()
+    key_hash = hash_api_key(raw_key)
+
+    supabase.table("api_keys").insert({
+        "customer_id": customer["id"],
+        "key_hash": key_hash,
+        "key_prefix": key_prefix,
+        "name": "Magic Link Login",
+        "is_active": True
+    }).execute()
+
+    return {
+        "api_key": raw_key,
+        "email": customer["email"],
+        "plan": customer["plan"],
+        "message": "Login successful"
     }
 
 

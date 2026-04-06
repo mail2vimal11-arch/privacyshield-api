@@ -9,7 +9,8 @@ from fastapi import HTTPException, Security, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.core.database import supabase
-
+from app.core.config import get_settings
+settings = get_settings()
 security = HTTPBearer()
 
 

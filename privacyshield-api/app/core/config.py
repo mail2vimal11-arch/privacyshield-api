@@ -21,12 +21,12 @@ class Settings(BaseSettings):
 
     # SendGrid
     sendgrid_api_key: str = ""
-    sendgrid_from_email: str = "noreply@privacyshield.io"
+    sendgrid_from_email: str = "noreply@aletheos.tech"
 
     # App
     app_env: str = "development"
-    api_base_url: str = "http://localhost:8000"
-    app_url: str = "http://localhost:3000"
+    api_base_url: str = "https://api.aletheos.tech"
+    app_url: str = "https://aletheos.tech"
     api_key_secret: str = "dev-secret-change-in-production"
 
     class Config:

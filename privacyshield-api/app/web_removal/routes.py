@@ -73,7 +73,7 @@ async def scan_exposure(
     db = supabase
 
     # Quota check
-    await check_quota(customer, "web_removal_scan", db)
+    await check_quota(customer, "web_removal_scan")
 
     engine = WebRemovalEngine(db)
     result = await engine.scan_exposure(
@@ -101,7 +101,7 @@ async def scan_exposure(
     except Exception as e:
         logger.warning(f"Could not save scan to DB: {e}")
 
-    await increment_usage(customer, "web_removal_scan", db)
+    await increment_usage(customer["id"], "web_removal_scan")
     return result
 
 
@@ -124,7 +124,7 @@ async def submit_removal(
     Returns a job_id you can use to download the PDF package.
     """
     db = supabase
-    await check_quota(customer, "web_removal_request", db)
+    await check_quota(customer, "web_removal_request")
 
     request_id = str(uuid.uuid4())
     engine = WebRemovalEngine(db)
@@ -187,7 +187,7 @@ async def submit_removal(
     except Exception as e:
         logger.warning(f"Could not save job to DB: {e}")
 
-    await increment_usage(customer, "web_removal_request", db)
+    await increment_usage(customer, "web_removal_request")
 
     return {
         "request_id": request_id,

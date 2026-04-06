@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
 
-from app.core.auth import verify_api_key, increment_usage
+from app.core.auth import verify_api_key, check_quota, increment_usage
 from app.core.database import supabase
 from app.data_deletion.connectors import get_connector, CONNECTORS
 from app.data_deletion.certificate import generate_certificate
@@ -464,6 +464,238 @@ async def list_supported_platforms(customer: dict = Depends(verify_api_key)):
         "total": len(result.data),
         "connected": _get_connected_platforms(customer["id"]),
         "platforms": result.data
+    }
+
+
+# ----------------------------------------------------------------
+# GDPR Consumer Request — New endpoint for consumer-facing dashboard
+# ----------------------------------------------------------------
+
+# Registry of consumer platforms with their GDPR/DPO contact emails
+CONSUMER_PLATFORM_REGISTRY = {
+    "google": {
+        "name": "Google",
+        "privacy_email": "google-privacy-policy@google.com",
+        "dpo_email": "privacy@google.com",
+        "gdpr_article": "17",
+        "typical_response_days": 30,
+    },
+    "facebook": {
+        "name": "Facebook / Meta",
+        "privacy_email": "privacy@meta.com",
+        "dpo_email": "privacy@meta.com",
+        "gdpr_article": "17",
+        "typical_response_days": 30,
+    },
+    "twitter": {
+        "name": "X (Twitter)",
+        "privacy_email": "privacy@twitter.com",
+        "dpo_email": "dpo@twitter.com",
+        "gdpr_article": "17",
+        "typical_response_days": 30,
+    },
+    "linkedin": {
+        "name": "LinkedIn",
+        "privacy_email": "privacy@linkedin.com",
+        "dpo_email": "DPO@linkedin.com",
+        "gdpr_article": "17",
+        "typical_response_days": 30,
+    },
+    "amazon": {
+        "name": "Amazon",
+        "privacy_email": "aws-privacy@amazon.com",
+        "dpo_email": "privacy@amazon.co.uk",
+        "gdpr_article": "17",
+        "typical_response_days": 30,
+    },
+    "apple": {
+        "name": "Apple",
+        "privacy_email": "privacy@apple.com",
+        "dpo_email": "data-protection-office@apple.com",
+        "gdpr_article": "17",
+        "typical_response_days": 30,
+    },
+    "microsoft": {
+        "name": "Microsoft",
+        "privacy_email": "msoprivacy@microsoft.com",
+        "dpo_email": "MSOpenTech-Privacy@microsoft.com",
+        "gdpr_article": "17",
+        "typical_response_days": 30,
+    },
+    "tiktok": {
+        "name": "TikTok",
+        "privacy_email": "privacy@tiktok.com",
+        "dpo_email": "privacy@tiktok.com",
+        "gdpr_article": "17",
+        "typical_response_days": 30,
+    },
+    "spotify": {
+        "name": "Spotify",
+        "privacy_email": "privacy@spotify.com",
+        "dpo_email": "privacy@spotify.com",
+        "gdpr_article": "17",
+        "typical_response_days": 30,
+    },
+    "netflix": {
+        "name": "Netflix",
+        "privacy_email": "privacy@netflix.com",
+        "dpo_email": "privacy@netflix.com",
+        "gdpr_article": "17",
+        "typical_response_days": 30,
+    },
+    "uber": {
+        "name": "Uber",
+        "privacy_email": "privacy@uber.com",
+        "dpo_email": "privacy@uber.com",
+        "gdpr_article": "17",
+        "typical_response_days": 30,
+    },
+    "airbnb": {
+        "name": "Airbnb",
+        "privacy_email": "privacy@airbnb.com",
+        "dpo_email": "DPO@airbnb.com",
+        "gdpr_article": "17",
+        "typical_response_days": 30,
+    },
+}
+
+
+class GDPRConsumerRequest(BaseModel):
+    platforms: List[str]         # e.g. ["spotify", "google"]
+    subject_email: str           # user's email on those platforms
+    subject_name: str            # user's full name
+
+
+@router.post("/gdpr-request")
+async def submit_gdpr_erasure_request(
+    request: GDPRConsumerRequest,
+    customer: dict = Depends(verify_api_key),
+):
+    """
+    Consumer-facing GDPR Article 17 erasure request.
+    Sends a formal deletion request email to each platform's privacy/DPO team.
+    No platform credentials required — works for any consumer platform.
+    """
+    await check_quota(customer, "deletion_gdpr_request")
+
+    job_id = generate_id("gdpr")
+    emails_sent = []
+    emails_failed = []
+
+    app_url = _get_app_url()
+
+    for platform_key in request.platforms:
+        platform_key = platform_key.lower()
+        platform_info = CONSUMER_PLATFORM_REGISTRY.get(platform_key)
+        if not platform_info:
+            emails_failed.append({"platform": platform_key, "reason": "Unsupported platform"})
+            continue
+
+        platform_name = platform_info["name"]
+        recipient = platform_info["privacy_email"]
+
+        subject = (
+            f"GDPR Article 17 — Right to Erasure Request — {request.subject_name} "
+            f"<{request.subject_email}>"
+        )
+
+        body = f"""To the Data Protection Officer / Privacy Team at {platform_name},
+
+I am writing to formally exercise my right to erasure under Article 17 of the General Data
+Protection Regulation (GDPR) (EU) 2016/679, and equivalent legislation under the UK GDPR
+and applicable data protection laws.
+
+DATA SUBJECT DETAILS:
+  Full Name:  {request.subject_name}
+  Email:      {request.subject_email}
+  Request ID: {job_id}
+  Date:       {datetime.utcnow().strftime('%d %B %Y')}
+
+REQUEST:
+I request the permanent and complete deletion of all personal data held by {platform_name}
+relating to the above data subject, including but not limited to:
+  - Account data and profile information
+  - Usage data, activity history, and behavioural data
+  - Any data shared with or sold to third parties
+  - Backups and archived copies, within technically feasible timescales
+
+LEGAL BASIS:
+Under GDPR Article 17(1), I have the right to erasure where:
+  (a) Personal data is no longer necessary for the purposes for which it was collected;
+  (b) I withdraw consent on which processing is based; or
+  (c) I object to processing under Article 21.
+
+TIMELINE:
+You are required under Article 12(3) to respond without undue delay and within one month
+of receipt of this request (extendable by a further two months where necessary).
+
+Please confirm receipt of this request and provide a reference number for tracking purposes.
+If you require identity verification, please advise on the procedure.
+
+This request was submitted via Aletheos Privacy Intelligence ({app_url}).
+
+Yours sincerely,
+{request.subject_name}
+{request.subject_email}
+
+---
+This erasure request was generated and submitted on behalf of the data subject using
+Aletheos (https://aletheos.tech). Reference: {job_id}
+"""
+
+        try:
+            from app.core.email import email_sender
+            result = await email_sender.send(
+                to=recipient,
+                subject=subject,
+                body=body,
+                reply_to=request.subject_email,
+            )
+            emails_sent.append({
+                "platform": platform_name,
+                "sent_to": recipient,
+                "sent": result.get("sent", False),
+                "simulated": result.get("simulated", False),
+            })
+        except Exception as e:
+            emails_failed.append({"platform": platform_name, "reason": str(e)})
+
+    # Save job to deletion_jobs table
+    try:
+        platform_names = [
+            CONSUMER_PLATFORM_REGISTRY.get(p, {}).get("name", p)
+            for p in request.platforms
+        ]
+        supabase.table("deletion_jobs").insert({
+            "customer_id": customer["id"],
+            "job_id": job_id,
+            "subject_email": request.subject_email,
+            "subject_identifiers": {"name": request.subject_name},
+            "platforms": [p.lower() for p in request.platforms],
+            "status": "submitted",
+            "total_records_found": len(emails_sent),
+            "created_at": datetime.utcnow().isoformat(),
+        }).execute()
+    except Exception as e:
+        print(f"[deletion] Could not save GDPR job to DB: {e}")
+
+    await increment_usage(customer["id"], "deletion_gdpr_request", job_id)
+
+    return {
+        "job_id": job_id,
+        "status": "submitted",
+        "subject_email": request.subject_email,
+        "platforms_requested": request.platforms,
+        "emails_sent": len(emails_sent),
+        "emails_failed": len(emails_failed),
+        "results": emails_sent,
+        "failed": emails_failed,
+        "message": (
+            f"GDPR Article 17 erasure requests submitted to {len(emails_sent)} platform(s). "
+            f"Platforms are legally required to respond within 30 days. "
+            f"You will receive confirmation emails directly from each platform."
+        ),
+        "reference": job_id,
     }
 
 

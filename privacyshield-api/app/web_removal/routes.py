@@ -187,7 +187,7 @@ async def submit_removal(
     except Exception as e:
         logger.warning(f"Could not save job to DB: {e}")
 
-    await increment_usage(customer, "web_removal_request")
+    await increment_usage(customer["id"], "web_removal_request")
 
     return {
         "request_id": request_id,

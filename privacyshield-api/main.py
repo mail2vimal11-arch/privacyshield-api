@@ -12,6 +12,8 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 import os
+import asyncio
+from datetime import datetime, timezone
 
 from app.core.database import init_db
 from app.ai_models.routes import router as ai_models_router
@@ -33,6 +35,92 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 # Startup / Shutdown
 # ----------------------------------------------------------------
 
+async def always_on_monitoring_loop():
+    """
+    Always-On Monitoring — runs every 24 hours.
+    For each Professional/Business customer, re-runs their web removal scan
+    and emails them if new data broker exposures are detected.
+    """
+    from app.core.database import supabase
+    from app.core.email import email_sender
+    from app.web_removal.brokers import run_broker_scan
+
+    INTERVAL_HOURS = 24
+
+    while True:
+        await asyncio.sleep(INTERVAL_HOURS * 3600)
+        print(f"[monitoring] Running Always-On scan — {datetime.now(timezone.utc).isoformat()}")
+
+        try:
+            # Fetch all active paid customers
+            result = supabase.table("customers").select(
+                "id, email, full_name, plan, monitoring_email"
+            ).in_("plan", ["professional", "business"]).eq("plan_status", "active").execute()
+
+            customers = result.data or []
+            print(f"[monitoring] {len(customers)} paid customers to scan")
+
+            for cust in customers:
+                try:
+                    customer_id = cust["id"]
+                    email = cust.get("monitoring_email") or cust["email"]
+                    name = cust.get("full_name", "")
+
+                    # Skip if no name (can't scan without a name)
+                    if not name:
+                        continue
+
+                    # Run a broker scan
+                    scan_results = await run_broker_scan(name, email)
+                    found_count = sum(1 for b in scan_results if b.get("found"))
+
+                    # Load previous scan result for this customer
+                    prev = supabase.table("web_removal_scans").select(
+                        "id, brokers_found_count"
+                    ).eq("customer_id", customer_id).order(
+                        "created_at", desc=True
+                    ).limit(2).execute()
+
+                    prev_count = 0
+                    if len(prev.data) > 1:
+                        prev_count = prev.data[1].get("brokers_found_count", 0) or 0
+
+                    # Save new scan
+                    supabase.table("web_removal_scans").insert({
+                        "customer_id": customer_id,
+                        "scan_type": "always_on",
+                        "subject_name": name,
+                        "subject_email": email,
+                        "brokers_found_count": found_count,
+                        "status": "complete",
+                        "results": scan_results,
+                        "created_at": datetime.utcnow().isoformat(),
+                    }).execute()
+
+                    # Email only if new exposures appeared
+                    if found_count > prev_count:
+                        new_found = found_count - prev_count
+                        summary = (
+                            f"{new_found} new data broker listing(s) detected — "
+                            f"{found_count} total across scanned brokers"
+                        )
+                        await email_sender.send_scan_complete_notification(
+                            customer_email=email,
+                            scan_type="Always-On Web Monitoring",
+                            summary=summary,
+                            risk_level="medium" if found_count < 5 else "high"
+                        )
+                        print(f"[monitoring] Alerted {email}: {new_found} new exposures")
+                    else:
+                        print(f"[monitoring] {email}: no new exposures ({found_count} total)")
+
+                except Exception as e:
+                    print(f"[monitoring] Error scanning customer {cust.get('id')}: {e}")
+
+        except Exception as e:
+            print(f"[monitoring] Loop error: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("🚀 Aletheos API starting up...")
@@ -42,7 +130,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"⚠️  Database connection failed: {e}")
         print("   Make sure SUPABASE_URL and SUPABASE_SERVICE_KEY are set in .env")
+
+    # Start Always-On Monitoring background task
+    monitoring_task = asyncio.create_task(always_on_monitoring_loop())
+    print("✅ Always-On Monitoring scheduler started (24h interval)")
+
     yield
+
+    monitoring_task.cancel()
+    try:
+        await monitoring_task
+    except asyncio.CancelledError:
+        pass
     print("👋 Aletheos API shutting down")
 
 

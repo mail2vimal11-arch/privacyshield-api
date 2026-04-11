@@ -1,6 +1,9 @@
 """
-database.py — Supabase client setup
-All database operations use this client.
+database.py — Supabase client setup.
+
+Uses a lazy wrapper so that if the client fails to initialise at import time
+(e.g. env vars not yet loaded), it retries automatically on first use.
+This fixes the 'NoneType has no attribute table' error on Railway cold starts.
 """
 from supabase import create_client, Client
 from app.core.config import settings
@@ -8,36 +11,65 @@ from app.core.config import settings
 
 def get_supabase() -> Client:
     """
-    Returns a Supabase client using the service_role key.
-    The service_role key bypasses Row Level Security — only use server-side.
+    Returns a fresh Supabase client using the service_role key.
+    The service_role key bypasses Row Level Security — server-side only.
     """
     if not settings.supabase_url or not settings.supabase_service_key:
         raise ValueError(
-            "Missing SUPABASE_URL or SUPABASE_SERVICE_KEY in environment variables. "
-            "Copy .env.example to .env and fill in your Supabase credentials."
+            "Missing SUPABASE_URL or SUPABASE_SERVICE_KEY. "
+            "Add them to Railway → Variables."
         )
-
-    client: Client = create_client(
-        settings.supabase_url,
-        settings.supabase_service_key
-    )
-    return client
+    return create_client(settings.supabase_url, settings.supabase_service_key)
 
 
-# Initialize immediately so route files that do
-# `from app.core.database import supabase` get the real client,
-# not None. Previously supabase was set to None here and only
-# initialized later in the lifespan, which was too late.
-try:
-    supabase: Client = get_supabase()
-except Exception as e:
-    print(f"⚠️  Supabase init failed at import time: {e}")
-    supabase: Client = None
+class _LazySupabaseClient:
+    """
+    Lazy proxy for the Supabase client.
+
+    All route files do `from app.core.database import supabase` and then call
+    supabase.table(...) / supabase.rpc(...).  This wrapper intercepts those
+    calls, initialises the real client on first use, and retries if a previous
+    attempt failed — so a Railway cold-start race between env-var loading and
+    module imports can never permanently leave supabase as None.
+    """
+
+    def __init__(self):
+        self._client: Client | None = None
+
+    def _get_client(self) -> Client:
+        if self._client is None:
+            self._client = get_supabase()
+        return self._client
+
+    # ── Proxy the two methods every route file uses ──────────────────────────
+
+    def table(self, table_name: str):
+        return self._get_client().table(table_name)
+
+    def rpc(self, fn: str, params: dict = None):
+        return self._get_client().rpc(fn, params or {})
+
+    # ── Auth helpers (used by some routes) ───────────────────────────────────
+
+    @property
+    def auth(self):
+        return self._get_client().auth
+
+    @property
+    def storage(self):
+        return self._get_client().storage
+
+
+# Single shared instance — import this everywhere
+supabase = _LazySupabaseClient()
 
 
 def init_db():
-    """Call once at startup to confirm DB client is ready."""
-    global supabase
-    if supabase is None:
-        supabase = get_supabase()
-    return supabase
+    """
+    Call once at startup (lifespan) to eagerly verify the DB connection.
+    Raises on failure so Railway shows a clear error in the deploy log.
+    """
+    client = supabase._get_client()
+    # Quick ping — will raise if credentials are wrong
+    client.table("customers").select("id").limit(1).execute()
+    return client

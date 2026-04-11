@@ -6,6 +6,11 @@ import string
 from datetime import datetime, timedelta
 
 
+def generate_scan_id() -> str:
+    """Generate a unique scan ID for dark web intelligence scans."""
+    return generate_id("dwi")
+
+
 def generate_id(prefix: str) -> str:
     """
     Generate a short unique ID with a readable prefix.

@@ -9,6 +9,20 @@ from supabase import create_client, Client
 from app.core.config import settings
 
 
+def _clean_url(url: str) -> str:
+    """
+    Sanitise the Supabase URL from Railway env vars.
+    Handles common copy-paste mistakes:
+      - missing https:// prefix
+      - trailing slashes
+      - accidental whitespace
+    """
+    url = url.strip().rstrip("/")
+    if url and not url.startswith("http"):
+        url = "https://" + url
+    return url
+
+
 def get_supabase() -> Client:
     """
     Returns a fresh Supabase client using the service_role key.
@@ -19,7 +33,9 @@ def get_supabase() -> Client:
             "Missing SUPABASE_URL or SUPABASE_SERVICE_KEY. "
             "Add them to Railway → Variables."
         )
-    return create_client(settings.supabase_url, settings.supabase_service_key)
+    url = _clean_url(settings.supabase_url)
+    key = settings.supabase_service_key.strip()
+    return create_client(url, key)
 
 
 class _LazySupabaseClient:

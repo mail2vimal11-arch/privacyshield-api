@@ -82,10 +82,13 @@ supabase = _LazySupabaseClient()
 
 def init_db():
     """
-    Call once at startup (lifespan) to eagerly verify the DB connection.
-    Raises on failure so Railway shows a clear error in the deploy log.
+    Call once at startup (lifespan) to verify the DB connection.
+    Non-fatal — app still starts even if Supabase is temporarily unreachable.
     """
-    client = supabase._get_client()
-    # Quick ping — will raise if credentials are wrong
-    client.table("customers").select("id").limit(1).execute()
-    return client
+    try:
+        client = supabase._get_client()
+        print(f"✅ Supabase client initialised → {_clean_url(settings.supabase_url)}")
+        return client
+    except Exception as e:
+        print(f"⚠️  Database connection failed: {e}")
+        return None

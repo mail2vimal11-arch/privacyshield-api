@@ -26,7 +26,6 @@ from qdrant_client.http.models import (
     FieldCondition,
     MatchValue,
 )
-from sentence_transformers import SentenceTransformer
 
 from app.dark_web_intelligence.slm.config import intel_config
 
@@ -73,10 +72,11 @@ class AletheosVectorStore:
         return self._client
 
     @property
-    def embedder(self) -> SentenceTransformer:
+    def embedder(self):
         if self._embedder is None:
-            print(f"[vector_store] Loading embedding model: {cfg.embedding_model_id}")
-            self._embedder = SentenceTransformer(cfg.embedding_model_id)
+            from fastembed import TextEmbedding
+            print(f"[vector_store] Loading fastembed model: {cfg.embedding_model_id}")
+            self._embedder = TextEmbedding(model_name=cfg.embedding_model_id)
         return self._embedder
 
     # ── Collection management ────────────────────────────────────────────────
@@ -109,8 +109,9 @@ class AletheosVectorStore:
 
     def embed(self, texts: List[str]) -> List[List[float]]:
         """Batch embed a list of text strings. Returns list of float vectors."""
-        vectors = self.embedder.encode(texts, batch_size=64, show_progress_bar=True)
-        return vectors.tolist()
+        # fastembed returns a generator of numpy arrays
+        vectors = list(self.embedder.embed(texts))
+        return [v.tolist() for v in vectors]
 
     # ── Upsert ───────────────────────────────────────────────────────────────
 

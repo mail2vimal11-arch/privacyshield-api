@@ -22,8 +22,12 @@ from app.billing.routes import router as billing_router
 from app.shadow_it.routes import router as shadow_it_router
 from app.data_deletion.routes import router as deletion_router
 from app.web_removal.routes import router as web_removal_router
-from app.dark_web_intelligence.routes import router as dark_web_router
-
+try:
+    from app.dark_web_intelligence.routes import router as dark_web_router
+    _dark_web_enabled = True
+except Exception as _dwi_err:
+    print(f"⚠️  Dark Web Intelligence module failed to load: {_dwi_err}")
+    _dark_web_enabled = False
 
 
 # ----------------------------------------------------------------
@@ -195,13 +199,14 @@ if os.path.exists(static_dir):
 # Routers
 # ----------------------------------------------------------------
 
-app.include_router(ai_models_router,  prefix="/v1")
-app.include_router(customers_router,  prefix="/v1")
-app.include_router(billing_router,    prefix="/v1")
-app.include_router(shadow_it_router,  prefix="/v1")
-app.include_router(deletion_router,   prefix="/v1")
+app.include_router(ai_models_router,   prefix="/v1")
+app.include_router(customers_router,   prefix="/v1")
+app.include_router(billing_router,     prefix="/v1")
+app.include_router(shadow_it_router,   prefix="/v1")
+app.include_router(deletion_router,    prefix="/v1")
 app.include_router(web_removal_router, prefix="/v1")
-app.include_router(dark_web_router,    prefix="/v1")
+if _dark_web_enabled:
+    app.include_router(dark_web_router, prefix="/v1")
 
 
 # ----------------------------------------------------------------
@@ -233,11 +238,12 @@ async def root(request: Request):
         "docs": "/docs",
         "shame_board": "/shame",
         "products": [
-            "AI Model Data Removal  — /v1/ai-models/",
-            "Shadow IT Detection    — /v1/shadow-it/",
-            "Data Deletion          — /v1/deletion/",
-            "Web Data Removal       — /v1/web-removal/",
-            "Customers              — /v1/customers/",
-            "Billing                — /v1/billing/",
+            "AI Model Data Removal   — /v1/ai-models/",
+            "Shadow IT Detection     — /v1/shadow-it/",
+            "Data Deletion           — /v1/deletion/",
+            "Web Data Removal        — /v1/web-removal/",
+            "Dark Web Intelligence   — /v1/dark-web/",
+            "Customers               — /v1/customers/",
+            "Billing                 — /v1/billing/",
         ]
     }

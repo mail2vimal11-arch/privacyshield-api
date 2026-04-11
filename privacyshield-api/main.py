@@ -222,6 +222,25 @@ async def health_check(request: Request):
     return {"status": "ok", "service": "Aletheos API", "version": "1.0.0"}
 
 
+@app.get("/debug-env")
+async def debug_env():
+    """Temporary: show env var shape to diagnose key issues. Remove after fix."""
+    from app.core.config import settings
+    url = settings.supabase_url or ""
+    key = settings.supabase_service_key or ""
+    return {
+        "supabase_url_set": bool(url),
+        "supabase_url_prefix": url[:30] if url else "EMPTY",
+        "service_key_set": bool(key),
+        "service_key_length": len(key),
+        "service_key_prefix": key[:20] if key else "EMPTY",
+        "service_key_suffix": key[-10:] if len(key) > 10 else "TOO_SHORT",
+        "service_key_starts_eyJ": key.startswith("eyJ"),
+        "has_newline": "\n" in key or "\\n" in key,
+        "has_quotes": key.startswith('"') or key.startswith("'"),
+    }
+
+
 @app.get("/shame")
 async def shame_dashboard():
     """Public Shame Dashboard — AI vendor GDPR response tracker."""

@@ -225,17 +225,30 @@ async def health_check(request: Request):
 @app.get("/debug-env")
 async def debug_env():
     """Temporary: show env var shape to diagnose key issues. Remove after fix."""
+    import base64, json
     from app.core.config import settings
     url = settings.supabase_url or ""
     key = settings.supabase_service_key or ""
+
+    # Decode JWT payload to check role without exposing full key
+    jwt_role = "DECODE_FAILED"
+    jwt_iss = "DECODE_FAILED"
+    try:
+        payload_b64 = key.split(".")[1]
+        # Add padding if needed
+        payload_b64 += "=" * (4 - len(payload_b64) % 4)
+        payload = json.loads(base64.b64decode(payload_b64))
+        jwt_role = payload.get("role", "NOT_FOUND")
+        jwt_iss = payload.get("iss", "NOT_FOUND")
+    except Exception as e:
+        jwt_role = f"ERROR: {e}"
+
     return {
-        "supabase_url_set": bool(url),
-        "supabase_url_prefix": url[:30] if url else "EMPTY",
-        "service_key_set": bool(key),
+        "supabase_url_prefix": url[:40] if url else "EMPTY",
         "service_key_length": len(key),
-        "service_key_prefix": key[:20] if key else "EMPTY",
-        "service_key_suffix": key[-10:] if len(key) > 10 else "TOO_SHORT",
         "service_key_starts_eyJ": key.startswith("eyJ"),
+        "jwt_role": jwt_role,          # must be "service_role"
+        "jwt_iss": jwt_iss,            # should be "supabase"
         "has_newline": "\n" in key or "\\n" in key,
         "has_quotes": key.startswith('"') or key.startswith("'"),
     }

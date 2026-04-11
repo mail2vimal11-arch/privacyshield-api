@@ -22,6 +22,8 @@ from app.billing.routes import router as billing_router
 from app.shadow_it.routes import router as shadow_it_router
 from app.data_deletion.routes import router as deletion_router
 from app.web_removal.routes import router as web_removal_router
+from app.dark_web_intelligence.routes import router as dark_web_router
+
 
 
 # ----------------------------------------------------------------
@@ -199,6 +201,7 @@ app.include_router(billing_router,    prefix="/v1")
 app.include_router(shadow_it_router,  prefix="/v1")
 app.include_router(deletion_router,   prefix="/v1")
 app.include_router(web_removal_router, prefix="/v1")
+app.include_router(dark_web_router,    prefix="/v1")
 
 
 # ----------------------------------------------------------------

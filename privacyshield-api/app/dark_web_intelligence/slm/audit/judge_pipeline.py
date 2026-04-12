@@ -229,7 +229,7 @@ async def evaluate_single(
             import anthropic
             aclient = anthropic.AsyncAnthropic()
             msg = await aclient.messages.create(
-                model="claude-sonnet-4-6",
+                model="claude-3-5-haiku-20241022",
                 max_tokens=512,
                 system=DEFENDER_SYSTEM,
                 messages=[{"role": "user", "content": test_case["prompt"]}],

@@ -229,8 +229,8 @@ class TogetherBackend:
 
 class AnthropicBackend:
     NAME = "anthropic"
-    # Use Haiku to protect credits — fast and cheap, still very capable
-    MODEL = "claude-haiku-4-5-20251001"
+    # claude-haiku-3-5 — cheapest available Claude, ~25x cheaper than Sonnet
+    MODEL = "claude-3-5-haiku-20241022"
 
     def __init__(self):
         self.api_key = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -243,13 +243,18 @@ class AnthropicBackend:
         client = anthropic.AsyncAnthropic(api_key=self.api_key)
         system_msg    = next((m["content"] for m in messages if m["role"] == "system"), "")
         user_messages = [m for m in messages if m["role"] != "system"]
-        resp = await client.messages.create(
-            model=self.MODEL,
-            max_tokens=max_tokens,
-            system=system_msg,
-            messages=user_messages,
-        )
-        return resp.content[0].text
+        try:
+            resp = await client.messages.create(
+                model=self.MODEL,
+                max_tokens=max_tokens,
+                system=system_msg,
+                messages=user_messages,
+            )
+            return resp.content[0].text
+        except anthropic.BadRequestError as e:
+            # Content filtering — skip gracefully, don't crash
+            print(f"[retriever] anthropic content filter triggered — {str(e)[:80]}")
+            raise
 
 
 # ─────────────────────────────────────────────────────────────────────────────

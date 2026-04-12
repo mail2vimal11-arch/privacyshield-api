@@ -25,11 +25,7 @@ if not os.environ.get("QDRANT_API_KEY"):
     sys.exit(1)
 
 import asyncio
-from app.dark_web_intelligence.slm.rag.ingestion import (
-    ingest_gdpr,
-    ingest_nist,
-    ingest_nvd,
-)
+from app.dark_web_intelligence.slm.rag.ingestion import run_full_ingestion
 from app.dark_web_intelligence.slm.rag.vector_store import vector_store
 
 
@@ -38,44 +34,10 @@ async def main():
     print(f"Qdrant URL: {os.environ['QDRANT_URL']}")
     print()
 
-    # Create collections
-    print("→ Ensuring Qdrant collections exist...")
-    vector_store.ensure_collections()
+    await run_full_ingestion()
+
+    # Show final counts
     print()
-
-    # Ingest GDPR
-    print("→ Ingesting GDPR (EUR-Lex)...")
-    try:
-        gdpr_count = await ingest_gdpr()
-        print(f"  ✅ GDPR: {gdpr_count} chunks ingested")
-    except Exception as e:
-        print(f"  ⚠️  GDPR failed: {e}")
-
-    print()
-
-    # Ingest NIST
-    print("→ Ingesting NIST CSF...")
-    try:
-        nist_count = await ingest_nist()
-        print(f"  ✅ NIST: {nist_count} chunks ingested")
-    except Exception as e:
-        print(f"  ⚠️  NIST failed: {e}")
-
-    print()
-
-    # Ingest NVD CVEs
-    print("→ Ingesting NVD CVE feed (recent)...")
-    try:
-        nvd_count = await ingest_nvd()
-        print(f"  ✅ NVD: {nvd_count} CVEs ingested")
-    except Exception as e:
-        print(f"  ⚠️  NVD failed: {e}")
-
-    print()
-    print("=== Ingestion complete ===")
-    print()
-
-    # Show counts
     for col in ["aletheos_gdpr", "aletheos_nist", "aletheos_nvd"]:
         try:
             count = vector_store.collection_count(col)

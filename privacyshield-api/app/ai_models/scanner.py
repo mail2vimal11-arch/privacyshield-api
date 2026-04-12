@@ -472,7 +472,7 @@ class AIModelScanner:
             for query in queries:
                 try:
                     response = await client.messages.create(
-                        model="claude-sonnet-4-20250514",
+                        model="claude-3-5-haiku-20241022",
                         max_tokens=400,
                         messages=[{"role": "user", "content": query}]
                     )

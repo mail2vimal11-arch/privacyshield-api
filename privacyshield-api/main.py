@@ -222,51 +222,6 @@ async def health_check(request: Request):
     return {"status": "ok", "service": "Aletheos API", "version": "1.0.0"}
 
 
-@app.get("/debug-env")
-async def debug_env():
-    """Temporary: show env var shape to diagnose key issues. Remove after fix."""
-    import base64, json
-    import httpx
-    from app.core.config import settings
-    from app.core.database import _clean_url
-    url = _clean_url(settings.supabase_url or "")
-    key = (settings.supabase_service_key or "").strip()
-
-    # Decode JWT payload
-    jwt_role = "DECODE_FAILED"
-    try:
-        payload_b64 = key.split(".")[1]
-        payload_b64 += "=" * (4 - len(payload_b64) % 4)
-        payload = json.loads(base64.b64decode(payload_b64))
-        jwt_role = payload.get("role", "NOT_FOUND")
-    except Exception as e:
-        jwt_role = f"ERROR: {e}"
-
-    # Live test call to Supabase REST API
-    live_test = {}
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(
-                f"{url}/rest/v1/customers?limit=1",
-                headers={
-                    "apikey": key,
-                    "Authorization": f"Bearer {key}",
-                }
-            )
-            live_test = {
-                "http_status": resp.status_code,
-                "response": resp.text[:300],
-            }
-    except Exception as e:
-        live_test = {"error": str(e)}
-
-    return {
-        "supabase_url": url[:50] if url else "EMPTY",
-        "service_key_length": len(key),
-        "jwt_role": jwt_role,
-        "live_supabase_test": live_test,
-    }
-
 
 @app.get("/shame")
 async def shame_dashboard():

@@ -1,0 +1,38 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Aletheos Phase 6B — SLM / RAG / Audit dependencies
+#
+# Install alongside the main requirements.txt:
+#   pip install -r requirements.txt -r requirements_slm.txt
+#
+# GPU training requires CUDA 11.8+ and PyTorch with CUDA support.
+# Install PyTorch separately first:
+#   pip install torch==2.2.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Model loading & inference ──────────────────────────────────────────────
+transformers==4.40.2
+accelerate==0.30.1
+bitsandbytes==0.43.1          # 4-bit quantisation (requires CUDA)
+
+# ── LoRA / PEFT ───────────────────────────────────────────────────────────
+peft==0.11.1
+
+# ── Training ──────────────────────────────────────────────────────────────
+trl==0.8.6                    # SFTTrainer + DPOTrainer
+datasets==2.19.1              # HuggingFace datasets (MITRE, hh-rlhf, OpenHermes)
+
+# ── Embeddings ────────────────────────────────────────────────────────────
+sentence-transformers==3.0.1  # all-MiniLM-L6-v2 embedding model
+
+# ── Vector store ──────────────────────────────────────────────────────────
+qdrant-client==1.9.1          # Qdrant Python client
+
+# ── Web scraping (for GDPR ingestion) ─────────────────────────────────────
+beautifulsoup4==4.12.3
+lxml==5.2.1
+
+# ── Async HTTP ────────────────────────────────────────────────────────────
+# httpx already in main requirements.txt — no duplicate needed
+
+# ── Optional: experiment tracking ─────────────────────────────────────────
+# wandb==0.17.0               # uncomment if you want W&B logging

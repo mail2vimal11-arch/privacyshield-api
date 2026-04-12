@@ -3,6 +3,7 @@ slm/config.py — Centralised configuration for the Aletheos Dark Web Intelligen
 
 All tunable knobs live here. Change once, propagates everywhere.
 """
+import os
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -100,17 +101,16 @@ class DPOConfig:
 
 @dataclass
 class RAGConfig:
-    # Qdrant — use ":memory:" for local dev, or a URL for production
-    qdrant_host: str = "localhost"
-    qdrant_port: int = 6333
-    qdrant_api_key: Optional[str] = None   # set via env var QDRANT_API_KEY
+    # Qdrant — reads QDRANT_URL and QDRANT_API_KEY from env vars automatically
+    qdrant_url: str = field(default_factory=lambda: os.environ.get("QDRANT_URL", "http://localhost:6333"))
+    qdrant_api_key: Optional[str] = field(default_factory=lambda: os.environ.get("QDRANT_API_KEY"))
 
     # Collection names
     gdpr_collection: str = "aletheos_gdpr"
     nist_collection: str = "aletheos_nist"
     nvd_collection: str = "aletheos_nvd"
 
-    # Embedding model (runs locally, no API key needed)
+    # Embedding model (fastembed — no API key, runs via ONNX)
     embedding_model_id: str = "sentence-transformers/all-MiniLM-L6-v2"
     embedding_dim: int = 384
 

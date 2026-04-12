@@ -55,20 +55,15 @@ class AletheosVectorStore:
     @property
     def client(self) -> QdrantClient:
         if self._client is None:
-            api_key = cfg.qdrant_api_key or os.environ.get("QDRANT_API_KEY")
+            url = cfg.qdrant_url
+            api_key = cfg.qdrant_api_key
             if api_key:
                 # Qdrant Cloud
-                self._client = QdrantClient(
-                    url=f"https://{cfg.qdrant_host}",
-                    api_key=api_key,
-                )
+                self._client = QdrantClient(url=url, api_key=api_key)
             else:
                 # Local instance
-                self._client = QdrantClient(
-                    host=cfg.qdrant_host,
-                    port=cfg.qdrant_port,
-                )
-            print(f"[vector_store] Connected to Qdrant at {cfg.qdrant_host}:{cfg.qdrant_port}")
+                self._client = QdrantClient(url=url)
+            print(f"[vector_store] Connected to Qdrant at {url}")
         return self._client
 
     @property

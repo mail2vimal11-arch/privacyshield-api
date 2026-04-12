@@ -35,8 +35,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Content Security Policy — API only, no browser rendering needed
         response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
 
-        # Remove server identification header
-        response.headers.pop("server", None)
-        response.headers.pop("Server", None)
+        # Remove server identification header (MutableHeaders uses del, not pop)
+        for _hdr in ("server", "Server"):
+            try:
+                del response.headers[_hdr]
+            except KeyError:
+                pass
 
         return response

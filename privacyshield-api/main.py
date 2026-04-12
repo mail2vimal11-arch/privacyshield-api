@@ -29,6 +29,13 @@ except Exception as _dwi_err:
     print(f"⚠️  Dark Web Intelligence module failed to load: {_dwi_err}")
     _dark_web_enabled = False
 
+try:
+    from app.machine_unlearning.routes import router as ml_router
+    _ml_enabled = True
+except Exception as _ml_err:
+    print(f"⚠️  Machine Unlearning module failed to load: {_ml_err}")
+    _ml_enabled = False
+
 
 # ----------------------------------------------------------------
 # Rate Limiter
@@ -209,6 +216,8 @@ app.include_router(deletion_router,    prefix="/v1")
 app.include_router(web_removal_router, prefix="/v1")
 if _dark_web_enabled:
     app.include_router(dark_web_router, prefix="/v1")
+if _ml_enabled:
+    app.include_router(ml_router, prefix="/v1")
 
 
 # ----------------------------------------------------------------
@@ -246,6 +255,7 @@ async def root(request: Request):
             "Data Deletion           — /v1/deletion/",
             "Web Data Removal        — /v1/web-removal/",
             "Dark Web Intelligence   — /v1/dark-web/",
+            "Machine Unlearning      — /v1/machine-unlearning/",
             "Customers               — /v1/customers/",
             "Billing                 — /v1/billing/",
         ]

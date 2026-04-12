@@ -37,3 +37,16 @@ env/
 
 # Nested duplicate folder (created by git init mistake)
 privacyshield-api/privacyshield-api/
+
+# ML model weights — never commit
+*.bin
+*.safetensors
+*.pt
+*.ckpt
+*.gguf
+/privacyshield-api/models/
+/privacyshield-api/data/
+/privacyshield-api/reports/
+
+# Jupyter notebook outputs — use nbstripout
+# Note: .ipynb files are committed but outputs must be stripped

@@ -85,10 +85,14 @@ def init_db():
     Call once at startup (lifespan) to verify the DB connection.
     Non-fatal — app still starts even if Supabase is temporarily unreachable.
     """
+    from app.core.logger import get_logger as _get_logger
+    _db_logger = _get_logger("aletheos.db")
     try:
         client = supabase._get_client()
-        print(f"✅ Supabase client initialised → {_clean_url(settings.supabase_url)}")
+        _masked_url = _clean_url(settings.supabase_url)
+        _masked_url = _masked_url[:8] + "****" + _masked_url[-15:] if len(_masked_url) > 23 else "****"
+        _db_logger.info("Supabase client initialised → %s", _masked_url)
         return client
     except Exception as e:
-        print(f"⚠️  Database connection failed: {e}")
+        _db_logger.warning("Database connection failed: %s", type(e).__name__)
         return None

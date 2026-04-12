@@ -2,6 +2,7 @@
 main.py — Aletheos API
 Entry point. Run with: uvicorn main:app --reload
 """
+import os
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -11,10 +12,11 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-import os
 import asyncio
 from datetime import datetime, timezone
 
+from app.core.security_headers import SecurityHeadersMiddleware
+from app.core.logger import setup_logging, get_logger, mask_pii
 from app.core.database import init_db
 from app.ai_models.routes import router as ai_models_router
 from app.customers.routes import router as customers_router
@@ -26,14 +28,14 @@ try:
     from app.dark_web_intelligence.routes import router as dark_web_router
     _dark_web_enabled = True
 except Exception as _dwi_err:
-    print(f"⚠️  Dark Web Intelligence module failed to load: {_dwi_err}")
+    _dwi_err_msg = str(_dwi_err)
     _dark_web_enabled = False
 
 try:
     from app.machine_unlearning.routes import router as ml_router
     _ml_enabled = True
 except Exception as _ml_err:
-    print(f"⚠️  Machine Unlearning module failed to load: {_ml_err}")
+    _ml_err_msg = str(_ml_err)
     _ml_enabled = False
 
 
@@ -42,6 +44,13 @@ except Exception as _ml_err:
 # ----------------------------------------------------------------
 
 limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
+
+
+# ----------------------------------------------------------------
+# Production flag — disables /docs, /redoc, /openapi.json
+# ----------------------------------------------------------------
+
+_is_prod = os.environ.get("RAILWAY_ENVIRONMENT", "").lower() == "production"
 
 
 # ----------------------------------------------------------------
@@ -58,11 +67,12 @@ async def always_on_monitoring_loop():
     from app.core.email import email_sender
     from app.web_removal.brokers import run_broker_scan
 
+    _mon_logger = get_logger("aletheos.monitoring")
     INTERVAL_HOURS = 24
 
     while True:
         await asyncio.sleep(INTERVAL_HOURS * 3600)
-        print(f"[monitoring] Running Always-On scan — {datetime.now(timezone.utc).isoformat()}")
+        _mon_logger.info("[monitoring] Running Always-On scan — %s", datetime.now(timezone.utc).isoformat())
 
         try:
             # Fetch all active paid customers
@@ -71,7 +81,7 @@ async def always_on_monitoring_loop():
             ).in_("plan", ["professional", "business"]).eq("plan_status", "active").execute()
 
             customers = result.data or []
-            print(f"[monitoring] {len(customers)} paid customers to scan")
+            _mon_logger.info("[monitoring] %s paid customers to scan", len(customers))
 
             for cust in customers:
                 try:
@@ -123,30 +133,39 @@ async def always_on_monitoring_loop():
                             summary=summary,
                             risk_level="medium" if found_count < 5 else "high"
                         )
-                        print(f"[monitoring] Alerted {email}: {new_found} new exposures")
+                        _mon_logger.info("[monitoring] customer_id=%s new_exposures=%s alerted", customer_id, new_found)
                     else:
-                        print(f"[monitoring] {email}: no new exposures ({found_count} total)")
+                        _mon_logger.info("[monitoring] customer_id=%s no_new_exposures total=%s", customer_id, found_count)
 
                 except Exception as e:
-                    print(f"[monitoring] Error scanning customer {cust.get('id')}: {e}")
+                    _mon_logger.error("[monitoring] Error scanning customer_id=%s: %s", cust.get('id'), type(e).__name__)
 
         except Exception as e:
-            print(f"[monitoring] Loop error: {e}")
+            _mon_logger.error("[monitoring] Loop error: %s", type(e).__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("🚀 Aletheos API starting up...")
+    setup_logging()
+
+    _startup_logger = get_logger("aletheos.startup")
+    _startup_logger.info("Aletheos API starting up...")
+
+    # Log deferred module load warnings now that logging is configured
+    if not _dark_web_enabled:
+        _startup_logger.warning("Dark Web Intelligence module failed to load: %s", _dwi_err_msg)
+    if not _ml_enabled:
+        _startup_logger.warning("Machine Unlearning module failed to load: %s", _ml_err_msg)
+
     try:
         init_db()
-        print("✅ Database connected")
+        _startup_logger.info("Database connected")
     except Exception as e:
-        print(f"⚠️  Database connection failed: {e}")
-        print("   Make sure SUPABASE_URL and SUPABASE_SERVICE_KEY are set in .env")
+        _startup_logger.warning("Database connection failed: %s — Make sure SUPABASE_URL and SUPABASE_SERVICE_KEY are set", type(e).__name__)
 
     # Start Always-On Monitoring background task
     monitoring_task = asyncio.create_task(always_on_monitoring_loop())
-    print("✅ Always-On Monitoring scheduler started (24h interval)")
+    _startup_logger.info("Always-On Monitoring scheduler started (24h interval)")
 
     yield
 
@@ -155,7 +174,7 @@ async def lifespan(app: FastAPI):
         await monitoring_task
     except asyncio.CancelledError:
         pass
-    print("👋 Aletheos API shutting down")
+    _startup_logger.info("Aletheos API shutting down")
 
 
 # ----------------------------------------------------------------
@@ -164,19 +183,19 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Aletheos API",
-    description=(
-        "Privacy intelligence platform. Scan AI models for your personal data, "
-        "remove records from data brokers, detect shadow SaaS, and execute "
-        "GDPR-compliant data deletions — all under one API."
-    ),
+    description="Privacy Intelligence Platform",
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url=None if _is_prod else "/docs",
+    redoc_url=None if _is_prod else "/redoc",
+    openapi_url=None if _is_prod else "/openapi.json",
     lifespan=lifespan,
     servers=[
         {"url": "https://api.aletheos.tech", "description": "Production"},
     ],
 )
+
+# Security headers — added first so it wraps all responses last (Starlette LIFO)
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Rate limiting middleware
 app.state.limiter = limiter
@@ -258,5 +277,6 @@ async def root(request: Request):
             "Machine Unlearning      — /v1/machine-unlearning/",
             "Customers               — /v1/customers/",
             "Billing                 — /v1/billing/",
+            "Platform Security      — /v1/health",
         ]
     }

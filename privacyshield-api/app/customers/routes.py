@@ -23,6 +23,7 @@ from app.core.auth import verify_api_key, generate_api_key, hash_api_key
 from app.core.database import supabase
 from app.core.email import email_sender
 from app.core.config import get_settings
+from app.core.errors import safe_http_error, db_error
 from app.utils.helpers import generate_id
 
 _settings = get_settings()
@@ -74,7 +75,7 @@ async def signup(request: SignupRequest):
             "email", request.email
         ).execute()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database connection error: {str(e)}")
+        raise db_error(e, "customer_lookup")
 
     if existing.data:
         raise HTTPException(
@@ -102,7 +103,7 @@ async def signup(request: SignupRequest):
             "created_at": created_at
         }).execute()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create account: {str(e)}")
+        raise db_error(e, "customer_create")
 
     # Generate API key
     raw_key, key_prefix = generate_api_key()
@@ -117,7 +118,7 @@ async def signup(request: SignupRequest):
             "is_active": True
         }).execute()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate API key: {str(e)}")
+        raise db_error(e, "key_generate")
 
     # Send welcome email (non-blocking — don't fail signup if email fails)
     try:
@@ -194,7 +195,7 @@ async def create_api_key(
             "is_active": True
         }).execute()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate key: {str(e)}")
+        raise db_error(e, "key_create")
 
     return {
         "api_key": raw_key,

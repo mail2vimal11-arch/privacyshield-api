@@ -21,6 +21,8 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status
 from pydantic import BaseModel, EmailStr, Field
 
 from app.core.auth import verify_api_key, check_quota, increment_usage
+from app.core.probe_detector import probe_detector
+from app.core.output_safety import output_monitor
 from app.dark_web_intelligence.scanner import scan_email, DarkWebScanResult
 from app.dark_web_intelligence.slm.rag.retriever import retriever as rag_retriever
 
@@ -186,6 +188,17 @@ async def intelligence_query(
 ):
     await check_quota(customer, "intelligence_query")
 
+    # ── Phase 7C: Probe detection ─────────────────────────────────────────────
+    probe_result = await probe_detector.detect(
+        query=request.question,
+        customer_id=customer.get("id"),
+    )
+    if probe_result.is_blocked:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=probe_result.block_reason,
+        )
+
     try:
         result = await rag_retriever.query(
             user_question=request.question,
@@ -197,6 +210,11 @@ async def intelligence_query(
             detail=f"Intelligence query failed: {str(e)}"
         )
 
+    # ── Phase 7C: Output safety monitor ──────────────────────────────────────
+    raw_answer = result.get("answer", "")
+    safety_check = output_monitor.check(raw_answer, query_hint=request.question)
+    safe_answer = safety_check.safe_output
+
     await increment_usage(customer["id"], "intelligence_query")
 
     sources_count = {
@@ -206,7 +224,7 @@ async def intelligence_query(
 
     return IntelligenceQueryResponse(
         question=request.question,
-        answer=result["answer"],
+        answer=safe_answer,
         sources_used_count=sources_count,
         backend_used=result.get("backend_used", "unknown"),
         timestamp=datetime.now(timezone.utc).isoformat(),
@@ -309,5 +327,75 @@ async def trigger_ingestion(
     return {
         "status": "queued",
         "message": f"{'NVD refresh' if nvd_only else 'Full knowledge base ingestion'} started in background.",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 7C: Threat Intelligence + Self-Evolving ML endpoints
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get(
+    "/dark-web/ml/threat-stats",
+    summary="Get threat event statistics and DPO training readiness (admin only)",
+    description=(
+        "Returns counts of probe detections (flagged/blocked), unprocessed events "
+        "available for DPO training, and latest batch metadata. Used to monitor "
+        "the self-evolving ML pipeline."
+    ),
+)
+async def get_threat_stats(customer: dict = Depends(verify_api_key)):
+    if not customer.get("is_admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Threat statistics are restricted to admin accounts."
+        )
+
+    from app.core.dpo_generator import dpo_generator
+    stats = await dpo_generator.get_batch_stats()
+    return {
+        **stats,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.post(
+    "/dark-web/ml/generate-dpo",
+    summary="Generate DPO training pairs from accumulated threat events (admin only)",
+    description=(
+        "Reads all unprocessed flagged/blocked probe events from the threat_events table "
+        "and converts them into DPO training pairs (JSONL format). The output path is "
+        "stored in system_config['latest_dpo_batch'] for the Kaggle training pipeline to use. "
+        "Minimum 10 events required to generate a batch."
+    ),
+)
+async def generate_dpo_pairs(
+    background_tasks: BackgroundTasks,
+    min_score: float = 0.35,
+    limit: int = 500,
+    customer: dict = Depends(verify_api_key),
+):
+    if not customer.get("is_admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="DPO generation is restricted to admin accounts."
+        )
+
+    from app.core.dpo_generator import dpo_generator
+
+    async def _generate():
+        result = await dpo_generator.generate_batch(min_score=min_score, limit=limit)
+        from app.core.logger import get_logger as _gl
+        _gl("aletheos.dpo").info("DPO batch generation complete: %s", result)
+
+    background_tasks.add_task(_generate)
+
+    return {
+        "status": "queued",
+        "message": (
+            f"DPO pair generation started in background "
+            f"(min_score={min_score}, limit={limit}). "
+            "Check GET /v1/dark-web/ml/threat-stats for results."
+        ),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
